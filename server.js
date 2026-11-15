@@ -1,224 +1,145 @@
-const { spawn } = require('node:child_process');
-const fs = require('node:fs');
-const http = require('node:http');
-const path = require('node:path');
+const express = require('express');
+const { spawn } = require('child_process');
+const path = require('path');
 
-const PORT = Number(process.env.PORT) || 4173;
-const COBOL_PROGRAM = path.join(__dirname, 'backend', 'shop');
-const COBOL_FIX = 'Run npm run build:cobol. If cobc is missing, rebuild the Codespace container or install GnuCOBOL.';
-const contentTypes = {
-  '.css': 'text/css; charset=utf-8',
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-};
+const app = express();
+const PORT = process.env.PORT || 4173;
+
+app.use(express.json());
+app.use(express.static(path.join(__dirname)));
 
 const startingProducts = [
   { id: 'espresso-machine', name: 'Espresso machine', priceCents: 18500, stock: 8 },
   { id: 'ceramic-mug', name: 'Ceramic mug', priceCents: 1250, stock: 12 },
   { id: 'coffee-beans', name: 'Coffee beans', priceCents: 1600, stock: 20 },
+  { id: 'coffee-grinder', name: 'Burr Coffee Grinder', priceCents: 4500, stock: 10 },
+  { id: 'milk-frother', name: 'Automatic Milk Frother', priceCents: 3500, stock: 15 },
+  { id: 'knock-box', name: 'Coffee Knock Box', priceCents: 1800, stock: 14 },
+  { id: 'tamper', name: 'Stainless Steel Tamper', priceCents: 1500, stock: 18 },
+  { id: 'french-press', name: 'Glass French Press', priceCents: 2200, stock: 12 },
+  { id: 'pourover-set', name: 'Pour Over Dripper Set', priceCents: 2800, stock: 10 },
+  { id: 'syrup-vanilla', name: 'Vanilla Coffee Syrup', priceCents: 850, stock: 25 },
+  { id: 'syrup-caramel', name: 'Caramel Coffee Syrup', priceCents: 850, stock: 25 },
+  { id: 'syrup-hazelnut', name: 'Hazelnut Coffee Syrup', priceCents: 850, stock: 20 },
+  { id: 'paper-filters', name: 'Cone Paper Filters (100pcs)', priceCents: 400, stock: 40 },
+  { id: 'digital-scale', name: 'Coffee Scale with Timer', priceCents: 1900, stock: 15 },
+  { id: 'pitcher-milk', name: 'Steaming Milk Pitcher', priceCents: 950, stock: 20 },
+  { id: 'cheese-pandesal', name: 'Cheese Pandesal', priceCents: 600, stock: 30 },
+  { id: 'granola', name: 'Artisan Granola Pack', priceCents: 1200, stock: 15 },
+  { id: 'creamer', name: 'Coffee Creamer', priceCents: 750, stock: 25 }
 ];
-let products = startingProducts.map((product) => ({ ...product }));
-let checkoutQueue = Promise.resolve();
+let currentProducts = JSON.parse(JSON.stringify(startingProducts));
 
-function sendJson(response, status, body) {
-  response.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
-  response.end(JSON.stringify(body));
-}
-
-function runCobol(args = [], input = '') {
-  return new Promise((resolve, reject) => {
-    const process = spawn(COBOL_PROGRAM, args, { stdio: ['pipe', 'pipe', 'pipe'] });
-    let stdout = '';
-    let stderr = '';
-
-    process.stdout.setEncoding('utf8');
-    process.stderr.setEncoding('utf8');
-    process.stdout.on('data', (chunk) => { stdout += chunk; });
-    process.stderr.on('data', (chunk) => { stderr += chunk; });
-    process.on('error', reject);
-    process.on('close', (code) => {
-      if (code === 0) {
-        resolve(stdout.trim());
-        return;
-      }
-      const error = new Error(stderr.trim() || `COBOL process exited with code ${code}.`);
-      error.stdout = stdout.trim();
-      reject(error);
-    });
-    process.stdin.end(input);
+app.get('/api/health', (req, res) => {
+  const cobol = spawn('./backend/shop', ['--health']);
+  let output = '';
+  cobol.stdout.on('data', (data) => { output += data.toString(); });
+  cobol.on('close', (code) => {
+    if (code === 0 && output.includes('COBOL_READY')) {
+      res.json({ status: 'ok', cobol: 'ready' });
+    } else {
+      res.status(500).json({ status: 'error', message: 'COBOL backend not ready' });
+    }
   });
-}
-
-async function readJson(request) {
-  let body = '';
-  for await (const chunk of request) {
-    body += chunk;
-    if (body.length > 16_384) {
-      throw Object.assign(new Error('Request body is too large.'), { status: 413 });
-    }
-  }
-  try {
-    return JSON.parse(body);
-  } catch {
-    throw Object.assign(new Error('Request body must be valid JSON.'), { status: 400 });
-  }
-}
-
-function checkout(body) {
-  const operation = checkoutQueue.then(() => performCheckout(body));
-  checkoutQueue = operation.catch(() => {});
-  return operation;
-}
-
-function resetInventory() {
-  const operation = checkoutQueue.then(() => {
-    products = startingProducts.map((product) => ({ ...product }));
-    return products;
-  });
-  checkoutQueue = operation.catch(() => {});
-  return operation;
-}
-
-async function performCheckout(body) {
-  if (!body || !Array.isArray(body.items)) {
-    return { status: 400, body: { error: 'Send an items array to place an order.' } };
-  }
-
-  const quantities = new Map();
-  for (const item of body.items) {
-    if (!item || typeof item.id !== 'string' || !Number.isSafeInteger(item.quantity)) {
-      return { status: 400, body: { error: 'Each item needs a product id and an integer quantity.' } };
-    }
-    if (!products.some((product) => product.id === item.id)) {
-      return { status: 400, body: { error: `Unknown product: ${item.id}.` } };
-    }
-    if (quantities.has(item.id)) {
-      return { status: 400, body: { error: 'Each product may appear only once in an order.' } };
-    }
-    if (Math.abs(item.quantity) > 999_999) {
-      return { status: 400, body: { error: 'Quantity exceeds the COBOL order limit of 999999.' } };
-    }
-    quantities.set(item.id, item.quantity);
-  }
-
-  const orderItems = products.map((product) => ({
-    ...product,
-    quantity: quantities.get(product.id) || 0,
-  }));
-  const input = orderItems.map(({ quantity, priceCents, stock }) => {
-    const sign = quantity < 0 ? '-' : '+';
-    return `${sign}${String(Math.abs(quantity)).padStart(6, '0')}${String(priceCents).padStart(8, '0')}${String(stock).padStart(6, '0')}`;
-  }).join('\n') + '\n';
-
-  let output;
-  try {
-    output = await runCobol([], input);
-  } catch (error) {
-    return {
-      status: 503,
-      body: { error: 'The COBOL checkout program could not run.', detail: error.message, fix: COBOL_FIX },
-    };
-  }
-
-  if (output.startsWith('ERROR|')) {
-    return { status: 409, body: { error: output.slice('ERROR|'.length) } };
-  }
-
-  const result = /^OK\|(\d{6})\|(\d{6})\|(\d{6})\|(\d{15})$/.exec(output);
-  if (!result) {
-    return {
-      status: 502,
-      body: { error: 'COBOL returned an unexpected checkout result.', detail: output, fix: COBOL_FIX },
-    };
-  }
-
-  const newStocks = result.slice(1, 4).map(Number);
-  const totalCents = Number(result[4]);
-  if (orderItems.some((item, index) => newStocks[index] !== item.stock - item.quantity)) {
-    return { status: 502, body: { error: 'COBOL returned inconsistent stock values.' } };
-  }
-
-  products = products.map((product, index) => ({ ...product, stock: newStocks[index] }));
-  const receiptItems = orderItems
-    .filter((item) => item.quantity > 0)
-    .map((item) => ({
-      id: item.id,
-      name: item.name,
-      quantity: item.quantity,
-      priceCents: item.priceCents,
-      lineTotalCents: item.quantity * item.priceCents,
-    }));
-
-  return {
-    status: 200,
-    body: { items: receiptItems, products, totalCents },
-  };
-}
-
-async function handleApi(request, response, pathname) {
-  if (request.method === 'GET' && pathname === '/api/status') {
-    try {
-      const output = await runCobol(['--health']);
-      if (output === 'COBOL_READY') {
-        sendJson(response, 200, { api: 'connected', cobolConnected: true });
-        return;
-      }
-      sendJson(response, 503, { api: 'connected', cobolConnected: false, error: 'COBOL health check returned an unexpected response.', fix: COBOL_FIX });
-    } catch (error) {
-      sendJson(response, 503, { api: 'connected', cobolConnected: false, error: 'GnuCOBOL is not connected to the API.', detail: error.message, fix: COBOL_FIX });
-    }
-    return;
-  }
-
-  if (request.method === 'GET' && pathname === '/api/products') {
-    sendJson(response, 200, { products });
-    return;
-  }
-
-  if (request.method === 'POST' && pathname === '/api/checkout') {
-    try {
-      const result = await checkout(await readJson(request));
-      sendJson(response, result.status, result.body);
-    } catch (error) {
-      sendJson(response, error.status || 500, { error: error.message });
-    }
-    return;
-  }
-
-  if (request.method === 'POST' && pathname === '/api/reset') {
-    const resetProducts = await resetInventory();
-    sendJson(response, 200, { products: resetProducts });
-    return;
-  }
-
-  sendJson(response, 404, { error: 'API route not found.' });
-}
-
-const server = http.createServer(async (request, response) => {
-  const pathname = new URL(request.url, 'http://localhost').pathname;
-  if (pathname.startsWith('/api/')) {
-    await handleApi(request, response, pathname);
-    return;
-  }
-
-  const requestedPath = pathname === '/' ? '/index.html' : pathname;
-  const filePath = path.resolve(__dirname, `.${requestedPath}`);
-  if (!filePath.startsWith(`${__dirname}${path.sep}`)) {
-    response.writeHead(404);
-    response.end('Not found');
-    return;
-  }
-  fs.readFile(filePath, (error, contents) => {
-    if (error) {
-      response.writeHead(404);
-      response.end('Not found');
-      return;
-    }
-    response.writeHead(200, { 'content-type': contentTypes[path.extname(filePath)] || 'application/octet-stream' });
-    response.end(contents);
+  cobol.on('error', () => {
+    res.status(500).json({ status: 'error', message: 'Failed to run COBOL backend' });
   });
 });
 
-server.listen(PORT, '0.0.0.0', () => {
+app.get('/api/products', (req, res) => {
+  res.json(currentProducts);
+});
+
+app.post('/api/reset', (req, res) => {
+  currentProducts = JSON.parse(JSON.stringify(startingProducts));
+  res.json({ success: true, products: currentProducts });
+});
+
+app.post('/api/checkout', (req, res) => {
+  const orderItems = req.body.items;
+  if (!Array.isArray(orderItems) || orderItems.length === 0) {
+    return res.status(400).json({ error: 'Invalid order items.' });
+  }
+
+  const lines = currentProducts.map(product => {
+    const ordered = orderItems.find(item => item.id === product.id);
+    const qty = ordered ? parseInt(ordered.quantity, 10) || 0 : 0;
+    const sign = qty > 0 ? '+' : '+';
+    const qtyStr = String(qty).padStart(6, '0');
+    const priceStr = String(product.priceCents).padStart(8, '0');
+    const stockStr = String(product.stock).padStart(6, '0');
+    return `${sign}${qtyStr}${priceStr}${stockStr}`;
+  });
+
+  const cobolInput = lines.join('\n') + '\n';
+  const cobol = spawn('./backend/shop', ['--checkout']);
+  let stdout = '';
+  let stderr = '';
+
+  cobol.stdout.on('data', (data) => { stdout += data.toString(); });
+  cobol.stderr.on('data', (data) => { stderr += data.toString(); });
+
+  cobol.on('close', (code) => {
+    if (code !== 0) {
+      return res.status(500).json({ error: 'Checkout failed in backend process.' });
+    }
+
+    const trimmed = stdout.trim();
+    if (trimmed.startsWith('ERROR|')) {
+      return res.status(400).json({ error: trimmed.split('|')[1] });
+    }
+
+    if (trimmed.startsWith('OK|')) {
+      const parts = trimmed.split('|');
+      const totalCents = parseInt(parts[parts.length - 1], 10);
+      const remainingStocks = parts.slice(1, parts.length - 1).map(Number);
+
+      currentProducts.forEach((p, idx) => {
+        p.stock = remainingStocks[idx];
+      });
+
+      const purchasedSummary = currentProducts.map((p, idx) => {
+        const ordered = orderItems.find(item => item.id === p.id);
+        const qty = ordered ? parseInt(ordered.quantity, 10) || 0 : 0;
+        return {
+          id: p.id,
+          name: p.name,
+          quantity: qty,
+          unitPriceCents: p.priceCents,
+          totalCents: qty * p.priceCents
+        };
+      }).filter(item => item.quantity > 0);
+
+      return res.json({
+        success: true,
+        totalCents,
+        items: purchasedSummary,
+        products: currentProducts
+      });
+    }
+
+    return res.status(500).json({ error: 'Unexpected response from checkout backend.' });
+  });
+
+  cobol.stdin.write(cobolInput);
+  cobol.stdin.end();
+});
+
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Corner Shop listening on http://0.0.0.0:${PORT}`);
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

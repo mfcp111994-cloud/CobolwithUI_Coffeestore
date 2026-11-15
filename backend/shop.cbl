@@ -1,20 +1,18 @@
 identification division.
 program-id. shop.
-
 data division.
 working-storage section.
 01 command-argument pic x(20).
 01 input-line pic x(21).
-01 item-index pic 9.
+01 item-index pic 99.
 01 total-cents pic 9(15) comp-3.
 01 order-items.
-   05 order-item occurs 3 times.
-      10 quantity-sign pic x.
-      10 item-quantity pic 9(6).
-      10 item-price pic 9(8).
-      10 item-stock pic 9(6).
-      10 remaining-stock pic 9(6).
-
+    05 order-item occurs 17 times.
+       10 quantity-sign pic x.
+       10 item-quantity pic 9(6).
+       10 item-price pic 9(8).
+       10 item-stock pic 9(6).
+       10 remaining-stock pic 9(6).
 procedure division.
 main.
     accept command-argument from command-line
@@ -22,8 +20,7 @@ main.
         display "COBOL_READY"
         stop run
     end-if
-
-    perform varying item-index from 1 by 1 until item-index > 3
+    perform varying item-index from 1 by 1 until item-index > 17
         accept input-line
         if (input-line(1:1) not = "+" and input-line(1:1) not = "-")
             or input-line(2:6) is not numeric
@@ -37,9 +34,8 @@ main.
         move input-line(8:8) to item-price(item-index)
         move input-line(16:6) to item-stock(item-index)
     end-perform
-
     move 0 to total-cents
-    perform varying item-index from 1 by 1 until item-index > 3
+    perform varying item-index from 1 by 1 until item-index > 17
         if quantity-sign(item-index) = "-"
             display "ERROR|Quantities cannot be negative."
             stop run
@@ -53,7 +49,13 @@ main.
         compute total-cents = total-cents +
             item-quantity(item-index) * item-price(item-index)
     end-perform
-
     display "OK|" remaining-stock(1) "|" remaining-stock(2) "|"
-        remaining-stock(3) "|" total-cents
+        remaining-stock(3) "|" remaining-stock(4) "|"
+        remaining-stock(5) "|" remaining-stock(6) "|"
+        remaining-stock(7) "|" remaining-stock(8) "|"
+        remaining-stock(9) "|" remaining-stock(10) "|"
+        remaining-stock(11) "|" remaining-stock(12) "|"
+        remaining-stock(13) "|" remaining-stock(14) "|"
+        remaining-stock(15) "|" remaining-stock(16) "|"
+        remaining-stock(17) "|" total-cents
     stop run.
