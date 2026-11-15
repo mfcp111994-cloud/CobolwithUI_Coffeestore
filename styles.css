@@ -31,9 +31,6 @@ body {
   color: #1f1c18;
 }
 
-  backdrop-filter: blur(4px);
-}
-
 button { font: inherit; }
 
 .topbar {

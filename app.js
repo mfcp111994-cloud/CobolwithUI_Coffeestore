@@ -14,9 +14,9 @@ const defaultImages = {
   'paper-filters': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQo58rz2EbwkJGuilaxaalC78aoJeXlR4kbAhmzvwJcHQ&s=10',
   'digital-scale': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSnLFaHjlC1vWbyd_mpmNCvJsebZIFHtZvbqgveCNeoUw&s=10',
   'pitcher-milk': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRc9n6lUFdbf3Uls-WhdwwBca9w0KWHnya6shwunap_GQ&s=10',
-  'cheese-pandesal': 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=300&q=80',
-  'granola': 'https://images.unsplash.com/photo-1517673135205-14e2c2e1f5d6?auto=format&fit=crop&w=300&q=80',
-  'creamer': 'https://images.unsplash.com/photo-1563729784474-d77dbb933a9e?auto=format&fit=crop&w=300&q=80'
+  'cheese-pandesal': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQqPb-SehZgJ9g5UgKQyCG8drTpo68kTL0XwniQnELiFA&s=10',
+  'granola': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS52RfcX0WM61gkzPA7gUH8MFO0LIjS6e-eynTSewwSjg&s=10',
+  'creamer': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRbNi0beGpHmdZQqEdldieA0eLkQ0saOtMw2ODwSY6_Tw&s=10'
 };
 const previewProducts = [
   { id: 'espresso-machine', name: 'Espresso machine', priceCents: 18500, stock: 8, description: 'A little ritual, made at home.' },
